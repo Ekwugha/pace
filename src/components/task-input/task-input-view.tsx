@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -134,6 +134,7 @@ export function TaskInputView() {
   const [taskTitle, setTaskTitle] = useState("");
   const [taskType, setTaskType] = useState<BlockType>("work");
   const [isAddingTask, setIsAddingTask] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   const currentPlan = useCurrentPlan();
   const selectedDate = useStore((state) => state.navigation.selectedDate);
@@ -147,10 +148,15 @@ export function TaskInputView() {
     getOrCreatePlan,
   } = useStore();
 
+  // Prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Ensure plan exists
   const plan = currentPlan || getOrCreatePlan(selectedDate);
 
-  // System assigns duration based on task type
+  // System assigns duration based on task type - hooks must be before conditional returns
   const handleAddTask = useCallback(() => {
     if (!taskTitle.trim()) return;
     
@@ -166,6 +172,20 @@ export function TaskInputView() {
   const handleGenerateSchedule = useCallback(() => {
     generateSchedule(selectedDate);
   }, [selectedDate, generateSchedule]);
+
+  // Show loading skeleton during hydration - AFTER all hooks
+  if (!mounted) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div className="text-center">
+          <div className="h-9 w-32 bg-white/10 rounded mx-auto mb-2 animate-pulse" />
+          <div className="h-5 w-48 bg-white/5 rounded mx-auto animate-pulse" />
+        </div>
+        <div className="h-48 bg-white/5 rounded-2xl animate-pulse" />
+        <div className="h-32 bg-white/5 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
 
   // Count tasks by type
   const workCount = plan.tasks.filter(t => t.type === "work").length;

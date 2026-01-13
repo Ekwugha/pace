@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Utensils,
   Sparkles,
+  X,
 } from "lucide-react";
 import { format, differenceInMinutes } from "date-fns";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -24,12 +25,10 @@ import { Badge } from "@/components/ui/badge";
 import { useStore, useCurrentPlan } from "@/store/useStore";
 import { cn } from "@/lib/utils";
 import { BlockType } from "@/types";
+import { getEncouragementMessage, EncouragementMessage } from "@/lib/encouragement";
 
 /**
- * ScheduleView - Displays the generated schedule with tradeoff explanations
- * 
- * Shows time blocks in a timeline format with clear indicators for
- * blocks that were reduced due to intensity settings.
+ * ScheduleView - Displays the generated schedule with encouragement on completion
  */
 
 const blockConfig: Record<
@@ -98,30 +97,85 @@ const blockConfig: Record<
 };
 
 export function ScheduleView() {
+  const [mounted, setMounted] = useState(false);
   const currentPlan = useCurrentPlan();
   const { setCurrentView, markBlockComplete, regenerateSchedule } = useStore();
   const selectedDate = useStore((state) => state.navigation.selectedDate);
+  
+  // Encouragement toast state
+  const [encouragement, setEncouragement] = useState<EncouragementMessage | null>(null);
+  const [showEncouragement, setShowEncouragement] = useState(false);
 
+  // Prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // All hooks must be called before any conditional returns
   const stats = useMemo(() => {
     if (!currentPlan) return null;
     
-    const workBlocks = currentPlan.blocks.filter((b) => b.type === "work");
-    const breakBlocks = currentPlan.blocks.filter((b) => b.type === "break");
-    const reducedBlocks = currentPlan.blocks.filter((b) => b.isReduced);
+    const completedBlocks = currentPlan.blocks.filter((b) => b.isCompleted && b.type !== "sleep");
+    const totalBlocks = currentPlan.blocks.filter((b) => b.type !== "sleep");
     
     return {
-      totalWork: workBlocks.reduce(
-        (sum, b) => sum + differenceInMinutes(new Date(b.end), new Date(b.start)),
-        0
-      ),
-      totalBreaks: breakBlocks.reduce(
-        (sum, b) => sum + differenceInMinutes(new Date(b.end), new Date(b.start)),
-        0
-      ),
-      reducedCount: reducedBlocks.length,
-      completedCount: currentPlan.blocks.filter((b) => b.isCompleted).length,
+      totalWork: currentPlan.blocks
+        .filter((b) => b.type === "work")
+        .reduce((sum, b) => sum + differenceInMinutes(new Date(b.end), new Date(b.start)), 0),
+      totalBreaks: currentPlan.blocks
+        .filter((b) => b.type === "break")
+        .reduce((sum, b) => sum + differenceInMinutes(new Date(b.end), new Date(b.start)), 0),
+      completedCount: completedBlocks.length,
+      totalCount: totalBlocks.length,
+      progress: totalBlocks.length > 0 ? (completedBlocks.length / totalBlocks.length) * 100 : 0,
     };
   }, [currentPlan]);
+
+  // Handle block completion with encouragement
+  const handleBlockComplete = useCallback((blockId: string, blockType: BlockType) => {
+    if (!currentPlan || !stats) return;
+    
+    const block = currentPlan.blocks.find(b => b.id === blockId);
+    const wasCompleted = block?.isCompleted;
+    
+    // Mark as complete
+    markBlockComplete(selectedDate, blockId);
+    
+    // Only show encouragement when completing (not uncompleting)
+    if (!wasCompleted) {
+      const newCompletedCount = stats.completedCount + 1;
+      const message = getEncouragementMessage(
+        blockType,
+        newCompletedCount,
+        stats.totalCount,
+        currentPlan.intensity
+      );
+      
+      setEncouragement(message);
+      setShowEncouragement(true);
+      
+      // Auto-hide after 4 seconds
+      setTimeout(() => {
+        setShowEncouragement(false);
+      }, 4000);
+    }
+  }, [currentPlan, stats, selectedDate, markBlockComplete]);
+
+  // Show loading skeleton during hydration - AFTER all hooks
+  if (!mounted) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="h-8 w-48 bg-white/10 rounded animate-pulse mb-2" />
+            <div className="h-5 w-32 bg-white/5 rounded animate-pulse" />
+          </div>
+        </div>
+        <div className="h-16 bg-white/5 rounded-2xl animate-pulse" />
+        <div className="h-96 bg-white/5 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
 
   if (!currentPlan || !currentPlan.isGenerated) {
     return (
@@ -142,11 +196,52 @@ export function ScheduleView() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      {/* Encouragement Toast */}
+      <AnimatePresence>
+        {showEncouragement && encouragement && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -30, scale: 0.9 }}
+            className="fixed top-24 left-1/2 -translate-x-1/2 z-50"
+          >
+            <GlassCard variant="elevated" className="px-6 py-4 shadow-glow-lg">
+              <div className="flex items-center gap-4">
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: [0, 1.3, 1] }}
+                  transition={{ duration: 0.4 }}
+                  className="text-4xl"
+                >
+                  {encouragement.emoji}
+                </motion.span>
+                <div className="flex-1">
+                  <motion.p
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="text-lg font-medium text-white"
+                  >
+                    {encouragement.text}
+                  </motion.p>
+                </div>
+                <button
+                  onClick={() => setShowEncouragement(false)}
+                  className="text-white/40 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </GlassCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">
-            {format(new Date(selectedDate), "EEEE's")} Schedule
+            {format(new Date(selectedDate), "EEEE")}&apos;s Schedule
           </h1>
           <p className="text-white/60">
             {format(new Date(selectedDate), "MMMM d, yyyy")}
@@ -166,6 +261,40 @@ export function ScheduleView() {
           </Button>
         </div>
       </div>
+
+      {/* Progress Bar */}
+      {stats && (
+        <GlassCard variant="subtle" className="p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-white/60">Day Progress</span>
+            <span className="text-sm font-medium text-white">
+              {stats.completedCount}/{stats.totalCount} tasks ({Math.round(stats.progress)}%)
+            </span>
+          </div>
+          <div className="h-3 bg-white/10 rounded-full overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${stats.progress}%` }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              className={cn(
+                "h-full rounded-full",
+                stats.progress === 100
+                  ? "bg-gradient-to-r from-emerald-400 to-green-500"
+                  : "bg-gradient-to-r from-sky-400 to-purple-500"
+              )}
+            />
+          </div>
+          {stats.progress === 100 && (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center text-emerald-400 font-medium mt-2"
+            >
+              🎉 All tasks complete! Amazing work today!
+            </motion.p>
+          )}
+        </GlassCard>
+      )}
 
       {/* Tradeoff Messages */}
       {currentPlan.tradeoffs.length > 0 && (
@@ -221,36 +350,6 @@ export function ScheduleView() {
         </GlassCard>
       )}
 
-      {/* Stats */}
-      {stats && (
-        <div className="grid grid-cols-4 gap-3">
-          <GlassCard variant="subtle" className="p-3 text-center">
-            <div className="text-2xl font-bold text-white">
-              {Math.floor(stats.totalWork / 60)}h {stats.totalWork % 60}m
-            </div>
-            <div className="text-xs text-white/50">Work Time</div>
-          </GlassCard>
-          <GlassCard variant="subtle" className="p-3 text-center">
-            <div className="text-2xl font-bold text-white">
-              {stats.totalBreaks}m
-            </div>
-            <div className="text-xs text-white/50">Break Time</div>
-          </GlassCard>
-          <GlassCard variant="subtle" className="p-3 text-center">
-            <div className="text-2xl font-bold text-white">
-              {currentPlan.blocks.length}
-            </div>
-            <div className="text-xs text-white/50">Blocks</div>
-          </GlassCard>
-          <GlassCard variant="subtle" className="p-3 text-center">
-            <div className="text-2xl font-bold text-emerald-400">
-              {stats.completedCount}/{currentPlan.blocks.length}
-            </div>
-            <div className="text-xs text-white/50">Completed</div>
-          </GlassCard>
-        </div>
-      )}
-
       {/* Timeline */}
       <GlassCard variant="elevated" className="p-6">
         <h2 className="text-lg font-semibold text-white mb-4">Timeline</h2>
@@ -264,6 +363,7 @@ export function ScheduleView() {
                 new Date(block.end),
                 new Date(block.start)
               );
+              const isSleep = block.type === "sleep";
 
               return (
                 <motion.div
@@ -271,13 +371,14 @@ export function ScheduleView() {
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.03 }}
-                  onClick={() => markBlockComplete(selectedDate, block.id)}
+                  onClick={() => !isSleep && handleBlockComplete(block.id, block.type)}
                   className={cn(
-                    "relative flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all",
+                    "relative flex items-center gap-4 p-4 rounded-xl border transition-all",
                     config.bgColor,
                     config.borderColor,
-                    block.isCompleted && "opacity-50",
-                    "hover:brightness-110"
+                    block.isCompleted && "opacity-60",
+                    !isSleep && "cursor-pointer hover:brightness-110 active:scale-[0.99]",
+                    isSleep && "cursor-default"
                   )}
                 >
                   {/* Time Column */}
@@ -292,15 +393,23 @@ export function ScheduleView() {
                     </div>
                   </div>
 
-                  {/* Icon */}
+                  {/* Completion Indicator */}
                   <div
                     className={cn(
-                      "w-10 h-10 rounded-lg flex items-center justify-center",
-                      config.bgColor
+                      "w-10 h-10 rounded-lg flex items-center justify-center transition-all",
+                      block.isCompleted
+                        ? "bg-emerald-500/30"
+                        : config.bgColor
                     )}
                   >
                     {block.isCompleted ? (
-                      <Check className="w-5 h-5 text-emerald-400" />
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: "spring", stiffness: 500 }}
+                      >
+                        <Check className="w-5 h-5 text-emerald-400" />
+                      </motion.div>
                     ) : (
                       <Icon className={cn("w-5 h-5", config.color)} />
                     )}
@@ -311,7 +420,7 @@ export function ScheduleView() {
                     <div
                       className={cn(
                         "font-medium text-white",
-                        block.isCompleted && "line-through"
+                        block.isCompleted && "line-through text-white/60"
                       )}
                     >
                       {block.label}
@@ -325,6 +434,8 @@ export function ScheduleView() {
                             ? "warning"
                             : block.type === "leisure"
                             ? "rest"
+                            : block.type === "movement"
+                            ? "movement"
                             : "default"
                         }
                         size="sm"
@@ -334,8 +445,11 @@ export function ScheduleView() {
                       {block.isReduced && (
                         <Badge variant="warning" size="sm">
                           Reduced
-                          {block.originalMinutes &&
-                            ` (was ${block.originalMinutes}m)`}
+                        </Badge>
+                      )}
+                      {block.type === "work" && !block.isCompleted && (
+                        <Badge variant="info" size="sm">
+                          Protected
                         </Badge>
                       )}
                     </div>
@@ -350,8 +464,12 @@ export function ScheduleView() {
             })}
           </AnimatePresence>
         </div>
+
+        {/* Tap hint */}
+        <p className="text-center text-xs text-white/40 mt-4">
+          Tap a block to mark it complete
+        </p>
       </GlassCard>
     </div>
   );
 }
-

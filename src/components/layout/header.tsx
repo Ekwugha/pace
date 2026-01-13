@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar,
@@ -28,9 +28,15 @@ interface HeaderProps {
 
 export function Header({ onOpenCommandPalette }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const navigation = useNavigation();
   const settings = useSettings();
   const { setCurrentView, updateSettings } = useStore();
+
+  // Prevent hydration mismatch with date
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const navItems = [
     { id: "input", label: "Tasks", icon: ListTodo },
@@ -71,7 +77,7 @@ export function Header({ onOpenCommandPalette }: HeaderProps) {
                 Pace
               </h1>
               <p className="text-xs text-white/50 hidden sm:block">
-                {format(new Date(), "EEEE, MMMM d")}
+                {mounted ? format(new Date(), "EEEE, MMMM d") : "Loading..."}
               </p>
             </div>
           </motion.div>

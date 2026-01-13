@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   ChevronLeft,
@@ -53,8 +53,15 @@ export function CalendarView({
   onStartPlanning,
 }: CalendarViewProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [mounted, setMounted] = useState(false);
   const selected = parseISO(selectedDate);
 
+  // Prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // All hooks must be called before any conditional returns
   // Generate calendar days
   const calendarDays = useMemo(() => {
     const monthStart = startOfMonth(currentMonth);
@@ -88,16 +95,32 @@ export function CalendarView({
       const plan = plans[dateStr];
       if (!plan) return null;
 
-      const completedTasks = plan.tasks.filter((t) => t.isCompleted).length;
-      const totalTasks = plan.tasks.length;
-      const percentage = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+      // Use blocks for completion tracking (excluding sleep)
+      const completableBlocks = plan.blocks.filter((b) => b.type !== "sleep");
+      const completedBlocks = completableBlocks.filter((b) => b.isCompleted).length;
+      const totalBlocks = completableBlocks.length;
+      const percentage = totalBlocks > 0 ? (completedBlocks / totalBlocks) * 100 : 0;
 
-      return { completedTasks, totalTasks, percentage, plan };
+      return { completedBlocks, totalBlocks, percentage, plan };
     },
     [plans]
   );
 
   const selectedPlan = plans[selectedDate];
+
+  // Show loading skeleton during hydration - AFTER all hooks
+  if (!mounted) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <div className="h-96 bg-white/5 rounded-2xl animate-pulse" />
+        </div>
+        <div>
+          <div className="h-64 bg-white/5 rounded-2xl animate-pulse" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -198,7 +221,7 @@ export function CalendarView({
                     <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-0.5">
                       {status.percentage === 100 ? (
                         <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                      ) : status.totalTasks > 0 ? (
+                      ) : status.totalBlocks > 0 ? (
                         <div className="w-2 h-2 rounded-full bg-pace-400" />
                       ) : (
                         <div className="w-2 h-2 rounded-full bg-white/30" />
@@ -244,93 +267,92 @@ export function CalendarView({
           </div>
 
           {selectedPlan ? (
-            <div className="space-y-4">
-              {/* Stats */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 rounded-xl bg-white/5">
-                  <div className="text-2xl font-bold text-white">
-                    {selectedPlan.tasks.filter((t) => t.isCompleted).length}
-                  </div>
-                  <div className="text-xs text-white/60">Completed</div>
-                </div>
-                <div className="p-3 rounded-xl bg-white/5">
-                  <div className="text-2xl font-bold text-white">
-                    {selectedPlan.tasks.length}
-                  </div>
-                  <div className="text-xs text-white/60">Total Tasks</div>
-                </div>
-              </div>
-
-              {/* Progress */}
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-white/60">Progress</span>
-                  <span className="text-white font-medium">
-                    {Math.round(
-                      (selectedPlan.tasks.filter((t) => t.isCompleted).length /
-                        Math.max(selectedPlan.tasks.length, 1)) *
-                        100
-                    )}%
-                  </span>
-                </div>
-                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                  <motion.div
-                    className="h-full bg-gradient-to-r from-pace-400 to-purple-500"
-                    initial={{ width: 0 }}
-                    animate={{
-                      width: `${
-                        (selectedPlan.tasks.filter((t) => t.isCompleted).length /
-                          Math.max(selectedPlan.tasks.length, 1)) *
-                        100
-                      }%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Task Preview */}
-              <div className="space-y-2">
-                <p className="text-sm text-white/60">Tasks</p>
-                {selectedPlan.tasks.slice(0, 5).map((task) => (
-                  <div
-                    key={task.id}
-                    className={cn(
-                      "flex items-center gap-2 p-2 rounded-lg bg-white/5",
-                      task.isCompleted && "opacity-50"
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "w-5 h-5 rounded-full border-2 flex items-center justify-center",
-                        task.isCompleted
-                          ? "bg-emerald-500 border-emerald-500"
-                          : "border-white/30"
-                      )}
-                    >
-                      {task.isCompleted && <Check className="w-3 h-3 text-white" />}
+            (() => {
+              const completableBlocks = selectedPlan.blocks.filter(b => b.type !== "sleep");
+              const completedCount = completableBlocks.filter(b => b.isCompleted).length;
+              const totalCount = completableBlocks.length;
+              const progressPct = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+              
+              return (
+                <div className="space-y-4">
+                  {/* Stats */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 rounded-xl bg-white/5">
+                      <div className="text-2xl font-bold text-white">
+                        {completedCount}
+                      </div>
+                      <div className="text-xs text-white/60">Completed</div>
                     </div>
-                    <span
-                      className={cn(
-                        "text-sm text-white truncate",
-                        task.isCompleted && "line-through text-white/50"
-                      )}
-                    >
-                      {task.title}
-                    </span>
+                    <div className="p-3 rounded-xl bg-white/5">
+                      <div className="text-2xl font-bold text-white">
+                        {totalCount}
+                      </div>
+                      <div className="text-xs text-white/60">Total Blocks</div>
+                    </div>
                   </div>
-                ))}
-                {selectedPlan.tasks.length > 5 && (
-                  <p className="text-xs text-white/40 text-center">
-                    +{selectedPlan.tasks.length - 5} more tasks
-                  </p>
-                )}
-              </div>
 
-              <Button variant="secondary" className="w-full">
-                <Clock className="w-4 h-4 mr-2" />
-                View Timeline
-              </Button>
-            </div>
+                  {/* Progress */}
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-white/60">Progress</span>
+                      <span className="text-white font-medium">
+                        {Math.round(progressPct)}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-pace-400 to-purple-500"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Task Preview - show scheduled blocks */}
+                  <div className="space-y-2">
+                    <p className="text-sm text-white/60">Scheduled</p>
+                    {completableBlocks.slice(0, 5).map((block) => (
+                      <div
+                        key={block.id}
+                        className={cn(
+                          "flex items-center gap-2 p-2 rounded-lg bg-white/5",
+                          block.isCompleted && "opacity-50"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "w-5 h-5 rounded-full border-2 flex items-center justify-center",
+                            block.isCompleted
+                              ? "bg-emerald-500 border-emerald-500"
+                              : "border-white/30"
+                          )}
+                        >
+                          {block.isCompleted && <Check className="w-3 h-3 text-white" />}
+                        </div>
+                        <span
+                          className={cn(
+                            "text-sm text-white truncate",
+                            block.isCompleted && "line-through text-white/50"
+                          )}
+                        >
+                          {block.label}
+                        </span>
+                      </div>
+                    ))}
+                    {completableBlocks.length > 5 && (
+                      <p className="text-xs text-white/40 text-center">
+                        +{completableBlocks.length - 5} more blocks
+                      </p>
+                    )}
+                  </div>
+
+                  <Button variant="secondary" className="w-full">
+                    <Clock className="w-4 h-4 mr-2" />
+                    View Timeline
+                  </Button>
+                </div>
+              );
+            })()
           ) : (
             <div className="text-center py-8">
               <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-white/5 flex items-center justify-center">

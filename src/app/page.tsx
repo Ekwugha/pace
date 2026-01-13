@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 // Layout Components
@@ -33,8 +33,14 @@ import { useStore, useNavigation } from "@/store/useStore";
 
 export default function Home() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const navigation = useNavigation();
   const { dayPlans, setSelectedDate, setCurrentView } = useStore();
+
+  // Prevent hydration mismatch - wait for client-side hydration
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Render content based on current view
   const renderContent = () => {
@@ -89,6 +95,25 @@ export default function Home() {
         return null;
     }
   };
+
+  // Show minimal loading state during hydration
+  if (!mounted) {
+    return (
+      <>
+        <AmbientBackground />
+        <div className="min-h-screen">
+          <div className="mx-4 mt-4 px-4 py-3 md:px-6 rounded-2xl bg-white/5 h-16" />
+          <main className="container mx-auto px-4 py-6 max-w-6xl">
+            <div className="max-w-2xl mx-auto space-y-6">
+              <div className="h-12 bg-white/5 rounded-xl animate-pulse" />
+              <div className="h-48 bg-white/5 rounded-2xl animate-pulse" />
+              <div className="h-32 bg-white/5 rounded-2xl animate-pulse" />
+            </div>
+          </main>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
