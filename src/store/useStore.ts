@@ -1,202 +1,230 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { format, parseISO, addMinutes } from "date-fns";
+import { format } from "date-fns";
 import {
   Task,
   DayPlan,
-  TimeBlock,
   UserPreferences,
-  PlanningSession,
-  PlanningResponse,
   NavigationState,
   AppSettings,
-  EnergyLevel,
-  MoodState,
-  TimeWindow,
-  CalendarView,
-  ThemeMode,
+  Intensity,
+  BlockType,
 } from "@/types";
-import { generateId, getOptimalTimeSlot } from "@/lib/utils";
+import { generateSchedule } from "@/lib/scheduler";
 
 /**
- * Main application state interface
- * Manages all state for the Pace Day Orchestrator
+ * PACE Store
+ * 
+ * Manages all application state with localStorage persistence.
+ * The scheduling logic is intensity-aware - work is ALWAYS protected,
+ * and non-work activities shrink based on intensity level.
  */
+
+// ============================================================================
+// STATE INTERFACE
+// ============================================================================
+
 interface PaceState {
-  // Day Plans
-  dayPlans: Record<string, DayPlan>; // Keyed by date string YYYY-MM-DD
-  currentPlanId: string | null;
-
-  // Planning Session
-  planningSession: PlanningSession | null;
-
+  // Day Plans (keyed by date string YYYY-MM-DD)
+  dayPlans: Record<string, DayPlan>;
+  
   // User Preferences
   preferences: UserPreferences;
-
+  
   // Navigation
   navigation: NavigationState;
-
+  
   // Settings
   settings: AppSettings;
-
-  // Actions - Day Plans
-  createDayPlan: (date: string, timeWindow: TimeWindow, energy: EnergyLevel, mood: MoodState) => DayPlan;
-  updateDayPlan: (planId: string, updates: Partial<DayPlan>) => void;
-  deleteDayPlan: (planId: string) => void;
-  getDayPlan: (date: string) => DayPlan | undefined;
-
-  // Actions - Tasks
-  addTask: (planId: string, task: Omit<Task, "id" | "isCompleted">) => Task;
-  updateTask: (planId: string, taskId: string, updates: Partial<Task>) => void;
-  deleteTask: (planId: string, taskId: string) => void;
-  toggleTaskComplete: (planId: string, taskId: string) => void;
-  reorderTasks: (planId: string, taskIds: string[]) => void;
-
-  // Actions - Time Blocks
-  generateTimeBlocks: (planId: string) => void;
-  updateTimeBlock: (planId: string, blockId: string, updates: Partial<TimeBlock>) => void;
-  addBreak: (planId: string, afterBlockId: string, breakType: TimeBlock["breakType"]) => void;
-
-  // Actions - Planning Session
-  startPlanningSession: (targetDate: string) => void;
-  addPlanningResponse: (response: PlanningResponse) => void;
-  nextPlanningStep: () => void;
-  prevPlanningStep: () => void;
-  completePlanningSession: () => void;
-  cancelPlanningSession: () => void;
-
-  // Actions - Navigation
+  
+  // ========== ACTIONS ==========
+  
+  // Day Plan Actions
+  getOrCreatePlan: (date: string) => DayPlan;
+  setIntensity: (date: string, intensity: Intensity) => void;
+  setWakeTime: (date: string, time: string) => void;
+  setSleepTime: (date: string, time: string) => void;
+  
+  // Task Actions (one at a time input)
+  addTask: (date: string, title: string, type: BlockType, estimatedMinutes: number) => Task;
+  removeTask: (date: string, taskId: string) => void;
+  updateTask: (date: string, taskId: string, updates: Partial<Task>) => void;
+  
+  // Schedule Generation
+  generateSchedule: (date: string) => void;
+  regenerateSchedule: (date: string) => void;
+  
+  // Block Actions
+  markBlockComplete: (date: string, blockId: string) => void;
+  
+  // Navigation
   setCurrentView: (view: NavigationState["currentView"]) => void;
   setSelectedDate: (date: string) => void;
-  setCalendarView: (view: CalendarView) => void;
-
-  // Actions - Settings & Preferences
+  
+  // Settings
   updateSettings: (updates: Partial<AppSettings>) => void;
   updatePreferences: (updates: Partial<UserPreferences>) => void;
-  setTheme: (theme: ThemeMode) => void;
-
-  // Utility
+  
+  // Reset
   reset: () => void;
 }
 
-// Default preferences
+// ============================================================================
+// DEFAULTS
+// ============================================================================
+
 const defaultPreferences: UserPreferences = {
-  wakeTime: "07:00",
-  sleepTime: "23:00",
-  preferredWorkHours: [9, 10, 11, 14, 15, 16],
-  breakFrequencyMinutes: 90,
-  breakDurationMinutes: 15,
-  balancePreference: {
-    work: 40,
-    rest: 20,
-    social: 20,
-    movement: 20,
-  },
+  defaultWakeTime: "07:00",
+  defaultSleepTime: "23:00",
+  defaultIntensity: "medium",
 };
 
-// Default settings
 const defaultSettings: AppSettings = {
   theme: "dark",
-  notifications: true,
   soundEffects: true,
   animationsEnabled: true,
 };
 
-// Default navigation
 const defaultNavigation: NavigationState = {
-  currentView: "planner",
+  currentView: "input",
   selectedDate: format(new Date(), "yyyy-MM-dd"),
-  calendarView: "day",
 };
 
-/**
- * Main Zustand store with persistence
- * Uses localStorage for data persistence across sessions
- */
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+function createEmptyPlan(date: string, preferences: UserPreferences): DayPlan {
+  return {
+    id: generateId(),
+    date,
+    intensity: preferences.defaultIntensity,
+    wakeTime: preferences.defaultWakeTime,
+    sleepTime: preferences.defaultSleepTime,
+    tasks: [],
+    blocks: [],
+    tradeoffs: [],
+    warnings: [],
+    isGenerated: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+}
+
+// ============================================================================
+// STORE
+// ============================================================================
+
 export const useStore = create<PaceState>()(
   persist(
     (set, get) => ({
       // Initial State
       dayPlans: {},
-      currentPlanId: null,
-      planningSession: null,
       preferences: defaultPreferences,
       navigation: defaultNavigation,
       settings: defaultSettings,
 
-      // Day Plan Actions
-      createDayPlan: (date, timeWindow, energy, mood) => {
-        const plan: DayPlan = {
-          id: generateId(),
-          date,
-          tasks: [],
-          timeBlocks: [],
-          timeWindow,
-          energyLevel: energy,
-          mood,
-          isGenerated: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-
-        set((state) => ({
-          dayPlans: { ...state.dayPlans, [date]: plan },
-          currentPlanId: plan.id,
+      // ========== DAY PLAN ACTIONS ==========
+      
+      getOrCreatePlan: (date) => {
+        const state = get();
+        if (state.dayPlans[date]) {
+          return state.dayPlans[date];
+        }
+        
+        const plan = createEmptyPlan(date, state.preferences);
+        set((s) => ({
+          dayPlans: { ...s.dayPlans, [date]: plan },
         }));
-
         return plan;
       },
 
-      updateDayPlan: (planId, updates) => {
+      setIntensity: (date, intensity) => {
         set((state) => {
-          const plan = Object.values(state.dayPlans).find((p) => p.id === planId);
+          const plan = state.dayPlans[date];
           if (!plan) return state;
-
+          
           return {
             dayPlans: {
               ...state.dayPlans,
-              [plan.date]: { ...plan, ...updates, updatedAt: new Date() },
+              [date]: {
+                ...plan,
+                intensity,
+                isGenerated: false, // Need to regenerate
+                updatedAt: new Date(),
+              },
             },
           };
         });
       },
 
-      deleteDayPlan: (planId) => {
+      setWakeTime: (date, time) => {
         set((state) => {
-          const plan = Object.values(state.dayPlans).find((p) => p.id === planId);
+          const plan = state.dayPlans[date];
           if (!plan) return state;
-
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { [plan.date]: _, ...rest } = state.dayPlans;
+          
           return {
-            dayPlans: rest,
-            currentPlanId: state.currentPlanId === planId ? null : state.currentPlanId,
+            dayPlans: {
+              ...state.dayPlans,
+              [date]: {
+                ...plan,
+                wakeTime: time,
+                isGenerated: false,
+                updatedAt: new Date(),
+              },
+            },
           };
         });
       },
 
-      getDayPlan: (date) => {
-        return get().dayPlans[date];
+      setSleepTime: (date, time) => {
+        set((state) => {
+          const plan = state.dayPlans[date];
+          if (!plan) return state;
+          
+          return {
+            dayPlans: {
+              ...state.dayPlans,
+              [date]: {
+                ...plan,
+                sleepTime: time,
+                isGenerated: false,
+                updatedAt: new Date(),
+              },
+            },
+          };
+        });
       },
 
-      // Task Actions
-      addTask: (planId, taskData) => {
+      // ========== TASK ACTIONS ==========
+
+      addTask: (date, title, type, estimatedMinutes) => {
         const task: Task = {
-          ...taskData,
           id: generateId(),
-          isCompleted: false,
+          title,
+          type,
+          estimatedMinutes,
+          isFlexible: type !== "work" && type !== "essential",
+          addedAt: new Date(),
         };
 
         set((state) => {
-          const plan = Object.values(state.dayPlans).find((p) => p.id === planId);
-          if (!plan) return state;
+          let plan = state.dayPlans[date];
+          if (!plan) {
+            plan = createEmptyPlan(date, state.preferences);
+          }
 
           return {
             dayPlans: {
               ...state.dayPlans,
-              [plan.date]: {
+              [date]: {
                 ...plan,
                 tasks: [...plan.tasks, task],
+                isGenerated: false,
                 updatedAt: new Date(),
               },
             },
@@ -206,19 +234,39 @@ export const useStore = create<PaceState>()(
         return task;
       },
 
-      updateTask: (planId, taskId, updates) => {
+      removeTask: (date, taskId) => {
         set((state) => {
-          const plan = Object.values(state.dayPlans).find((p) => p.id === planId);
+          const plan = state.dayPlans[date];
           if (!plan) return state;
 
           return {
             dayPlans: {
               ...state.dayPlans,
-              [plan.date]: {
+              [date]: {
+                ...plan,
+                tasks: plan.tasks.filter((t) => t.id !== taskId),
+                isGenerated: false,
+                updatedAt: new Date(),
+              },
+            },
+          };
+        });
+      },
+
+      updateTask: (date, taskId, updates) => {
+        set((state) => {
+          const plan = state.dayPlans[date];
+          if (!plan) return state;
+
+          return {
+            dayPlans: {
+              ...state.dayPlans,
+              [date]: {
                 ...plan,
                 tasks: plan.tasks.map((t) =>
                   t.id === taskId ? { ...t, ...updates } : t
                 ),
+                isGenerated: false,
                 updatedAt: new Date(),
               },
             },
@@ -226,162 +274,79 @@ export const useStore = create<PaceState>()(
         });
       },
 
-      deleteTask: (planId, taskId) => {
+      // ========== SCHEDULE GENERATION ==========
+
+      generateSchedule: (date) => {
         set((state) => {
-          const plan = Object.values(state.dayPlans).find((p) => p.id === planId);
-          if (!plan) return state;
+          const plan = state.dayPlans[date];
+          if (!plan || plan.tasks.length === 0) return state;
 
-          return {
-            dayPlans: {
-              ...state.dayPlans,
-              [plan.date]: {
-                ...plan,
-                tasks: plan.tasks.filter((t) => t.id !== taskId),
-                timeBlocks: plan.timeBlocks.filter((b) => b.taskId !== taskId),
-                updatedAt: new Date(),
-              },
-            },
-          };
-        });
-      },
-
-      toggleTaskComplete: (planId, taskId) => {
-        set((state) => {
-          const plan = Object.values(state.dayPlans).find((p) => p.id === planId);
-          if (!plan) return state;
-
-          return {
-            dayPlans: {
-              ...state.dayPlans,
-              [plan.date]: {
-                ...plan,
-                tasks: plan.tasks.map((t) =>
-                  t.id === taskId
-                    ? {
-                        ...t,
-                        isCompleted: !t.isCompleted,
-                        completedAt: !t.isCompleted ? new Date() : undefined,
-                      }
-                    : t
-                ),
-                updatedAt: new Date(),
-              },
-            },
-          };
-        });
-      },
-
-      reorderTasks: (planId, taskIds) => {
-        set((state) => {
-          const plan = Object.values(state.dayPlans).find((p) => p.id === planId);
-          if (!plan) return state;
-
-          const taskMap = new Map(plan.tasks.map((t) => [t.id, t]));
-          const reorderedTasks = taskIds
-            .map((id) => taskMap.get(id))
-            .filter((t): t is Task => t !== undefined);
-
-          return {
-            dayPlans: {
-              ...state.dayPlans,
-              [plan.date]: {
-                ...plan,
-                tasks: reorderedTasks,
-                updatedAt: new Date(),
-              },
-            },
-          };
-        });
-      },
-
-      // Time Block Actions
-      generateTimeBlocks: (planId) => {
-        set((state) => {
-          const plan = Object.values(state.dayPlans).find((p) => p.id === planId);
-          if (!plan) return state;
-
-          const { preferences } = state;
-          const planDate = parseISO(plan.date);
-          const [wakeHour, wakeMin] = preferences.wakeTime.split(":").map(Number);
-          const [sleepHour, sleepMin] = preferences.sleepTime.split(":").map(Number);
-
-          let currentTime = new Date(planDate);
-          currentTime.setHours(wakeHour, wakeMin, 0, 0);
-
-          const endTime = new Date(planDate);
-          endTime.setHours(sleepHour, sleepMin, 0, 0);
-
-          // Sort tasks by optimal time slot
-          const sortedTasks = [...plan.tasks].sort((a, b) => {
-            const slotA = getOptimalTimeSlot(a.category, plan.energyLevel);
-            const slotB = getOptimalTimeSlot(b.category, plan.energyLevel);
-            return slotA.preferredHour - slotB.preferredHour;
-          });
-
-          const timeBlocks: TimeBlock[] = [];
-          let minutesSinceBreak = 0;
-
-          for (const task of sortedTasks) {
-            // Check if we need a break
-            if (
-              minutesSinceBreak >= preferences.breakFrequencyMinutes &&
-              currentTime < endTime
-            ) {
-              const breakBlock: TimeBlock = {
-                id: generateId(),
-                taskId: "break",
-                startTime: new Date(currentTime),
-                endTime: addMinutes(currentTime, preferences.breakDurationMinutes),
-                isBreak: true,
-                breakType: "stretch",
-              };
-              timeBlocks.push(breakBlock);
-              currentTime = breakBlock.endTime;
-              minutesSinceBreak = 0;
+          const result = generateSchedule(
+            plan.tasks.map((t) => ({
+              id: t.id,
+              title: t.title,
+              type: t.type,
+              estimatedMinutes: t.estimatedMinutes,
+              isFlexible: t.isFlexible,
+            })),
+            {
+              wakeTime: plan.wakeTime,
+              targetSleepTime: plan.sleepTime,
+              intensity: plan.intensity,
+              date: new Date(date),
             }
-
-            // Add task block
-            if (currentTime < endTime) {
-              const taskEndTime = addMinutes(currentTime, task.estimatedMinutes);
-              const block: TimeBlock = {
-                id: generateId(),
-                taskId: task.id,
-                startTime: new Date(currentTime),
-                endTime: taskEndTime > endTime ? endTime : taskEndTime,
-                isBreak: false,
-              };
-              timeBlocks.push(block);
-              currentTime = block.endTime;
-              minutesSinceBreak += task.estimatedMinutes;
-            }
-          }
+          );
 
           return {
             dayPlans: {
               ...state.dayPlans,
-              [plan.date]: {
+              [date]: {
                 ...plan,
-                timeBlocks,
+                blocks: result.blocks,
+                tradeoffs: result.tradeoffs,
+                warnings: result.warnings,
                 isGenerated: true,
                 updatedAt: new Date(),
               },
             },
+            navigation: {
+              ...state.navigation,
+              currentView: "schedule",
+            },
           };
         });
       },
 
-      updateTimeBlock: (planId, blockId, updates) => {
+      regenerateSchedule: (date) => {
+        const state = get();
+        const plan = state.dayPlans[date];
+        if (!plan) return;
+        
+        // Clear existing schedule and regenerate
+        set((s) => ({
+          dayPlans: {
+            ...s.dayPlans,
+            [date]: { ...plan, isGenerated: false, blocks: [] },
+          },
+        }));
+        
+        get().generateSchedule(date);
+      },
+
+      // ========== BLOCK ACTIONS ==========
+
+      markBlockComplete: (date, blockId) => {
         set((state) => {
-          const plan = Object.values(state.dayPlans).find((p) => p.id === planId);
+          const plan = state.dayPlans[date];
           if (!plan) return state;
 
           return {
             dayPlans: {
               ...state.dayPlans,
-              [plan.date]: {
+              [date]: {
                 ...plan,
-                timeBlocks: plan.timeBlocks.map((b) =>
-                  b.id === blockId ? { ...b, ...updates } : b
+                blocks: plan.blocks.map((b) =>
+                  b.id === blockId ? { ...b, isCompleted: !b.isCompleted } : b
                 ),
                 updatedAt: new Date(),
               },
@@ -390,132 +355,8 @@ export const useStore = create<PaceState>()(
         });
       },
 
-      addBreak: (planId, afterBlockId, breakType) => {
-        set((state) => {
-          const plan = Object.values(state.dayPlans).find((p) => p.id === planId);
-          if (!plan) return state;
+      // ========== NAVIGATION ==========
 
-          const blockIndex = plan.timeBlocks.findIndex((b) => b.id === afterBlockId);
-          if (blockIndex === -1) return state;
-
-          const afterBlock = plan.timeBlocks[blockIndex];
-          const breakDuration = state.preferences.breakDurationMinutes;
-
-          const breakBlock: TimeBlock = {
-            id: generateId(),
-            taskId: "break",
-            startTime: afterBlock.endTime,
-            endTime: addMinutes(afterBlock.endTime, breakDuration),
-            isBreak: true,
-            breakType,
-          };
-
-          // Shift subsequent blocks
-          const updatedBlocks = [...plan.timeBlocks];
-          updatedBlocks.splice(blockIndex + 1, 0, breakBlock);
-
-          // Adjust times for blocks after the new break
-          for (let i = blockIndex + 2; i < updatedBlocks.length; i++) {
-            const block = updatedBlocks[i];
-            const duration =
-              (block.endTime.getTime() - block.startTime.getTime()) / 60000;
-            block.startTime = addMinutes(updatedBlocks[i - 1].endTime, 0);
-            block.endTime = addMinutes(block.startTime, duration);
-          }
-
-          return {
-            dayPlans: {
-              ...state.dayPlans,
-              [plan.date]: {
-                ...plan,
-                timeBlocks: updatedBlocks,
-                updatedAt: new Date(),
-              },
-            },
-          };
-        });
-      },
-
-      // Planning Session Actions
-      startPlanningSession: (targetDate) => {
-        set({
-          planningSession: {
-            id: generateId(),
-            targetDate,
-            currentStep: 0,
-            responses: [],
-            isComplete: false,
-            startedAt: new Date(),
-          },
-        });
-      },
-
-      addPlanningResponse: (response) => {
-        set((state) => {
-          if (!state.planningSession) return state;
-
-          const existingIndex = state.planningSession.responses.findIndex(
-            (r) => r.questionId === response.questionId
-          );
-
-          let updatedResponses: PlanningResponse[];
-          if (existingIndex !== -1) {
-            updatedResponses = [...state.planningSession.responses];
-            updatedResponses[existingIndex] = response;
-          } else {
-            updatedResponses = [...state.planningSession.responses, response];
-          }
-
-          return {
-            planningSession: {
-              ...state.planningSession,
-              responses: updatedResponses,
-            },
-          };
-        });
-      },
-
-      nextPlanningStep: () => {
-        set((state) => {
-          if (!state.planningSession) return state;
-          return {
-            planningSession: {
-              ...state.planningSession,
-              currentStep: state.planningSession.currentStep + 1,
-            },
-          };
-        });
-      },
-
-      prevPlanningStep: () => {
-        set((state) => {
-          if (!state.planningSession) return state;
-          return {
-            planningSession: {
-              ...state.planningSession,
-              currentStep: Math.max(0, state.planningSession.currentStep - 1),
-            },
-          };
-        });
-      },
-
-      completePlanningSession: () => {
-        set((state) => {
-          if (!state.planningSession) return state;
-          return {
-            planningSession: {
-              ...state.planningSession,
-              isComplete: true,
-            },
-          };
-        });
-      },
-
-      cancelPlanningSession: () => {
-        set({ planningSession: null });
-      },
-
-      // Navigation Actions
       setCurrentView: (view) => {
         set((state) => ({
           navigation: { ...state.navigation, currentView: view },
@@ -523,18 +364,16 @@ export const useStore = create<PaceState>()(
       },
 
       setSelectedDate: (date) => {
+        // Ensure plan exists for this date
+        get().getOrCreatePlan(date);
+        
         set((state) => ({
           navigation: { ...state.navigation, selectedDate: date },
         }));
       },
 
-      setCalendarView: (view) => {
-        set((state) => ({
-          navigation: { ...state.navigation, calendarView: view },
-        }));
-      },
+      // ========== SETTINGS ==========
 
-      // Settings Actions
       updateSettings: (updates) => {
         set((state) => ({
           settings: { ...state.settings, ...updates },
@@ -547,18 +386,11 @@ export const useStore = create<PaceState>()(
         }));
       },
 
-      setTheme: (theme) => {
-        set((state) => ({
-          settings: { ...state.settings, theme },
-        }));
-      },
+      // ========== RESET ==========
 
-      // Reset
       reset: () => {
         set({
           dayPlans: {},
-          currentPlanId: null,
-          planningSession: null,
           preferences: defaultPreferences,
           navigation: defaultNavigation,
           settings: defaultSettings,
@@ -566,33 +398,26 @@ export const useStore = create<PaceState>()(
       },
     }),
     {
-      name: "pace-storage",
+      name: "pace-storage-v2",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         dayPlans: state.dayPlans,
         preferences: state.preferences,
         settings: state.settings,
-        navigation: {
-          ...state.navigation,
-          selectedDate: format(new Date(), "yyyy-MM-dd"), // Always start on today
-        },
       }),
     }
   )
 );
 
-// Selector hooks for optimized re-renders
-export const useDayPlan = (date: string) =>
-  useStore((state) => state.dayPlans[date]);
+// ============================================================================
+// SELECTOR HOOKS
+// ============================================================================
 
-export const useCurrentPlan = () =>
-  useStore((state) => {
-    const { selectedDate } = state.navigation;
-    return state.dayPlans[selectedDate];
-  });
+export const useCurrentPlan = () => {
+  const selectedDate = useStore((state) => state.navigation.selectedDate);
+  return useStore((state) => state.dayPlans[selectedDate]);
+};
 
 export const useSettings = () => useStore((state) => state.settings);
 export const usePreferences = () => useStore((state) => state.preferences);
 export const useNavigation = () => useStore((state) => state.navigation);
-export const usePlanningSession = () => useStore((state) => state.planningSession);
-

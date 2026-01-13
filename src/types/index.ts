@@ -1,114 +1,96 @@
 /**
  * Core type definitions for the Pace Day Orchestrator
+ * 
+ * PACE uses intensity-based scheduling where work is ALWAYS protected.
+ * Non-work activities shrink based on intensity level.
  */
 
-// Task category types for different activities
-export type TaskCategory = "work" | "rest" | "social" | "movement";
+// Intensity levels that control schedule compression
+export type Intensity = "low" | "medium" | "high";
 
-// Energy levels that affect task scheduling
-export type EnergyLevel = "high" | "medium" | "low";
+// Block types in priority order (higher = more protected)
+export type BlockType = 
+  | "work"       // Priority 1 - NEVER reduced
+  | "essential"  // Priority 2 - Meals, hygiene, must-dos
+  | "break"      // Priority 3 - Can be shortened
+  | "phone"      // Priority 4 - Can be heavily reduced  
+  | "social"     // Priority 4 - Can be heavily reduced
+  | "leisure"    // Priority 5 - First to go
+  | "sleep"      // Priority 6 - Protected minimum 6.5h
+  | "meal"       // Subset of essential
+  | "movement";  // Exercise, walks
 
-// Mood states that influence the planning flow
-export type MoodState = "energized" | "calm" | "tired" | "stressed" | "neutral";
-
-// Time window options for day planning
-export type TimeWindow = 3 | 6 | 12 | 24;
-
-// Individual task representation
+// User-input task (before scheduling)
 export interface Task {
   id: string;
   title: string;
-  category: TaskCategory;
+  type: BlockType;
   estimatedMinutes: number;
-  priority: "high" | "medium" | "low";
-  isCompleted: boolean;
-  completedAt?: Date;
-  notes?: string;
+  isFlexible: boolean; // Can be reduced when time is tight
+  addedAt: Date;
+  isCompleted?: boolean; // For tracking completion in calendar view
 }
 
-// Time block in the schedule
+// Scheduled time block (after scheduling)
 export interface TimeBlock {
   id: string;
-  taskId: string;
-  startTime: Date;
-  endTime: Date;
-  isBreak: boolean;
-  breakType?: "walk" | "phone" | "nap" | "stretch" | "snack";
+  start: Date;
+  end: Date;
+  label: string;
+  type: BlockType;
+  taskId?: string;
+  isReduced: boolean; // Was shortened due to intensity
+  originalMinutes?: number; // Pre-reduction duration
+  isCompleted?: boolean;
 }
 
-// User preferences for day planning
-export interface UserPreferences {
-  wakeTime: string; // HH:mm format
-  sleepTime: string; // HH:mm format
-  preferredWorkHours: number[];
-  breakFrequencyMinutes: number;
-  breakDurationMinutes: number;
-  balancePreference: {
-    work: number; // 0-100 percentage
-    rest: number;
-    social: number;
-    movement: number;
-  };
-}
-
-// Day plan representing a complete planned day
+// Day plan containing all scheduled blocks
 export interface DayPlan {
   id: string;
-  date: string; // ISO date string YYYY-MM-DD
+  date: string; // YYYY-MM-DD
+  intensity: Intensity;
+  wakeTime: string; // HH:mm
+  sleepTime: string; // HH:mm
   tasks: Task[];
-  timeBlocks: TimeBlock[];
-  timeWindow: TimeWindow;
-  energyLevel: EnergyLevel;
-  mood: MoodState;
+  blocks: TimeBlock[];
+  tradeoffs: string[]; // Explanations of schedule adjustments
+  warnings: string[];
   isGenerated: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
 
-// Planning flow question types
-export interface PlanningQuestion {
-  id: string;
-  type: "choice" | "slider" | "multiSelect" | "timeInput" | "text";
-  question: string;
-  subtext?: string;
-  options?: PlanningOption[];
-  min?: number;
-  max?: number;
-  defaultValue?: string | number | string[];
+// Schedule statistics
+export interface ScheduleStats {
+  totalWorkMinutes: number;
+  totalBreakMinutes: number;
+  totalPhoneMinutes: number;
+  totalLeisureMinutes: number;
+  sleepHours: number;
+  sleepReduced: boolean;
 }
 
-export interface PlanningOption {
-  id: string;
-  label: string;
-  value: string;
-  icon?: string;
-  description?: string;
+// User preferences
+export interface UserPreferences {
+  defaultWakeTime: string;
+  defaultSleepTime: string;
+  defaultIntensity: Intensity;
 }
-
-// User response to a planning question
-export interface PlanningResponse {
-  questionId: string;
-  value: string | number | string[];
-}
-
-// Planning session state
-export interface PlanningSession {
-  id: string;
-  targetDate: string;
-  currentStep: number;
-  responses: PlanningResponse[];
-  isComplete: boolean;
-  startedAt: Date;
-}
-
-// Calendar view types
-export type CalendarView = "day" | "week";
 
 // Navigation state
 export interface NavigationState {
-  currentView: "planner" | "timeline" | "calendar";
+  currentView: "input" | "schedule" | "calendar";
   selectedDate: string;
-  calendarView: CalendarView;
+}
+
+// Calendar view type
+export type CalendarView = "day" | "week";
+
+// App settings
+export interface AppSettings {
+  theme: "light" | "dark" | "system";
+  soundEffects: boolean;
+  animationsEnabled: boolean;
 }
 
 // Command palette action
@@ -117,37 +99,5 @@ export interface CommandAction {
   label: string;
   shortcut?: string;
   icon?: string;
-  category: "navigation" | "planning" | "settings" | "quick-add";
   action: () => void;
 }
-
-// Theme mode
-export type ThemeMode = "light" | "dark" | "system";
-
-// App settings
-export interface AppSettings {
-  theme: ThemeMode;
-  notifications: boolean;
-  soundEffects: boolean;
-  animationsEnabled: boolean;
-}
-
-// Statistics for tracking
-export interface DayStats {
-  tasksCompleted: number;
-  totalTasks: number;
-  minutesWorked: number;
-  minutesRested: number;
-  minutesSocial: number;
-  minutesMovement: number;
-  completionRate: number;
-}
-
-// Break suggestion based on current state
-export interface BreakSuggestion {
-  type: "walk" | "phone" | "nap" | "stretch" | "snack" | "water";
-  duration: number;
-  reason: string;
-  priority: "suggested" | "recommended" | "needed";
-}
-

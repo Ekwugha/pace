@@ -5,14 +5,16 @@ import { motion } from "framer-motion";
 import {
   Search,
   Calendar,
-  Plus,
   Moon,
   Sun,
   Sparkles,
   Clock,
   Trash2,
-  Settings,
   ChevronRight,
+  ListTodo,
+  Zap,
+  Flame,
+  Leaf,
 } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -34,7 +36,7 @@ interface CommandItem {
   label: string;
   description?: string;
   icon: React.ComponentType<{ className?: string }>;
-  category: "navigation" | "planning" | "settings" | "quick";
+  category: "navigation" | "intensity" | "settings";
   shortcut?: string;
   action: () => void;
 }
@@ -43,87 +45,113 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const [search, setSearch] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const settings = useStore((state) => state.settings);
+  const selectedDate = useStore((state) => state.navigation.selectedDate);
   const {
     setCurrentView,
     setSelectedDate,
-    setTheme,
-    startPlanningSession,
+    updateSettings,
+    setIntensity,
+    getOrCreatePlan,
     reset,
   } = useStore();
 
   // Define all available commands
   const commands: CommandItem[] = useMemo(
     () => [
-      // Quick Actions
-      {
-        id: "new-plan-today",
-        label: "Plan Today",
-        description: "Start planning your day",
-        icon: Sparkles,
-        category: "quick",
-        shortcut: "⌘N",
-        action: () => {
-          const today = format(new Date(), "yyyy-MM-dd");
-          setSelectedDate(today);
-          startPlanningSession(today);
-          setCurrentView("planner");
-          onOpenChange(false);
-        },
-      },
-      {
-        id: "new-plan-tomorrow",
-        label: "Plan Tomorrow",
-        description: "Prepare for tomorrow",
-        icon: Clock,
-        category: "quick",
-        action: () => {
-          const tomorrow = format(addDays(new Date(), 1), "yyyy-MM-dd");
-          setSelectedDate(tomorrow);
-          startPlanningSession(tomorrow);
-          setCurrentView("planner");
-          onOpenChange(false);
-        },
-      },
-      {
-        id: "quick-task",
-        label: "Add Quick Task",
-        description: "Add a task to today's plan",
-        icon: Plus,
-        category: "quick",
-        shortcut: "⌘T",
-        action: () => {
-          setCurrentView("planner");
-          onOpenChange(false);
-        },
-      },
       // Navigation
       {
-        id: "nav-planner",
-        label: "Go to Planner",
-        icon: Sparkles,
+        id: "nav-tasks",
+        label: "Go to Tasks",
+        description: "Add and manage tasks",
+        icon: ListTodo,
         category: "navigation",
         action: () => {
-          setCurrentView("planner");
+          setCurrentView("input");
           onOpenChange(false);
         },
       },
       {
-        id: "nav-timeline",
-        label: "Go to Timeline",
+        id: "nav-schedule",
+        label: "Go to Schedule",
+        description: "View generated timeline",
         icon: Clock,
         category: "navigation",
         action: () => {
-          setCurrentView("timeline");
+          setCurrentView("schedule");
           onOpenChange(false);
         },
       },
       {
         id: "nav-calendar",
         label: "Go to Calendar",
+        description: "View all days",
         icon: Calendar,
         category: "navigation",
         action: () => {
           setCurrentView("calendar");
+          onOpenChange(false);
+        },
+      },
+      {
+        id: "plan-today",
+        label: "Plan Today",
+        description: "Start planning for today",
+        icon: Sparkles,
+        category: "navigation",
+        shortcut: "⌘N",
+        action: () => {
+          const today = format(new Date(), "yyyy-MM-dd");
+          setSelectedDate(today);
+          getOrCreatePlan(today);
+          setCurrentView("input");
+          onOpenChange(false);
+        },
+      },
+      {
+        id: "plan-tomorrow",
+        label: "Plan Tomorrow",
+        description: "Prepare for tomorrow",
+        icon: Calendar,
+        category: "navigation",
+        action: () => {
+          const tomorrow = format(addDays(new Date(), 1), "yyyy-MM-dd");
+          setSelectedDate(tomorrow);
+          getOrCreatePlan(tomorrow);
+          setCurrentView("input");
+          onOpenChange(false);
+        },
+      },
+      // Intensity
+      {
+        id: "intensity-low",
+        label: "Set Low Intensity",
+        description: "Full recovery, balanced day",
+        icon: Leaf,
+        category: "intensity",
+        action: () => {
+          setIntensity(selectedDate, "low");
+          onOpenChange(false);
+        },
+      },
+      {
+        id: "intensity-medium",
+        label: "Set Medium Intensity",
+        description: "Focused but balanced",
+        icon: Zap,
+        category: "intensity",
+        action: () => {
+          setIntensity(selectedDate, "medium");
+          onOpenChange(false);
+        },
+      },
+      {
+        id: "intensity-high",
+        label: "Set High Intensity",
+        description: "Maximum productivity, reduced breaks",
+        icon: Flame,
+        category: "intensity",
+        action: () => {
+          setIntensity(selectedDate, "high");
           onOpenChange(false);
         },
       },
@@ -135,18 +163,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         category: "settings",
         shortcut: "⌘D",
         action: () => {
-          setTheme(settings.theme === "dark" ? "light" : "dark");
-          onOpenChange(false);
-        },
-      },
-      {
-        id: "open-settings",
-        label: "Open Settings",
-        icon: Settings,
-        category: "settings",
-        shortcut: "⌘,",
-        action: () => {
-          // TODO: Open settings modal
+          updateSettings({ theme: settings.theme === "dark" ? "light" : "dark" });
           onOpenChange(false);
         },
       },
@@ -164,7 +181,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         },
       },
     ],
-    [settings.theme, setCurrentView, setSelectedDate, startPlanningSession, setTheme, reset, onOpenChange]
+    [settings.theme, selectedDate, setCurrentView, setSelectedDate, setIntensity, getOrCreatePlan, updateSettings, reset, onOpenChange]
   );
 
   // Filter commands based on search
@@ -245,9 +262,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   }, [open, onOpenChange]);
 
   const categoryLabels: Record<string, string> = {
-    quick: "Quick Actions",
     navigation: "Navigation",
-    planning: "Planning",
+    intensity: "Intensity",
     settings: "Settings",
   };
 
@@ -302,7 +318,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                       <div
                         className={cn(
                           "w-8 h-8 rounded-lg flex items-center justify-center",
-                          isSelected ? "bg-pace-500/20" : "bg-white/5"
+                          isSelected ? "bg-sky-500/20" : "bg-white/5"
                         )}
                       >
                         <cmd.icon className="w-4 h-4" />
@@ -339,4 +355,3 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     </Dialog>
   );
 }
-

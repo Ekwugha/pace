@@ -1,46 +1,45 @@
 # Pace - AI Day Orchestrator
 
-An intelligent day planning system that helps you orchestrate overwhelming days through interaction, negotiation, and encouragement.
+An intelligent day-planning system that helps you schedule overwhelming days through smart negotiation and clear tradeoffs.
 
-![Pace Banner](https://via.placeholder.com/1200x400/0c4a6e/ffffff?text=Pace+-+AI+Day+Orchestrator)
+![Pace](https://via.placeholder.com/1200x400/0c4a6e/ffffff?text=Pace+-+Protect+Your+Work)
 
-## ✨ Features
+## 🎯 Core Philosophy
 
-### Core Planning Flow
-- **Interactive AI-Style Planning**: Answer questions about your energy, mood, and goals
-- **Smart Time Windows**: Choose from 3h, 6h, 12h, or 24h planning windows
-- **Energy-Aware Scheduling**: Tasks are ordered based on your energy levels
-- **Balance Preferences**: Set your ideal work/rest/social/movement ratio
+**Work is ALWAYS protected.**
 
-### Task Management
-- **Drag & Drop Reordering**: Organize tasks with smooth animations
-- **Category-Based Tasks**: Work, Rest, Social, Movement
-- **Priority Levels**: High, Medium, Low
-- **Progress Tracking**: Visual completion indicators
+When your day gets intense, Pace automatically reduces non-essential activities (breaks, phone time, leisure) to protect your work blocks. Sleep is the last to shrink and never goes below 6.5 hours.
 
-### Timeline View
-- **Wake-to-Sleep Planning**: Full day visualization
-- **Time Blocks**: See exactly when each task is scheduled
-- **Break Suggestions**: Automatic breaks based on your preferences
-- **Interactive Blocks**: Click to expand and manage tasks
+## ✨ Key Features
 
-### Calendar View
-- **Day/Week Views**: Navigate through your plans
-- **Progress Indicators**: See completion status at a glance
-- **Quick Planning**: Start planning any day from the calendar
+### Intensity-Based Scheduling
 
-### UI/UX Features
-- **Glassmorphism Design**: Beautiful frosted glass cards
-- **Ambient Backgrounds**: Dynamic gradients that change with time of day
-- **Framer Motion Animations**: Smooth, delightful transitions
-- **Command Palette (⌘K)**: Quick access to all features
-- **Dark/Light Mode**: System-aware theme switching
-- **Responsive Design**: Works on desktop, tablet, and mobile
+Choose your intensity level and Pace adjusts everything else:
 
-### Encouragement System
-- **Progress-Based Messages**: Motivational feedback as you complete tasks
-- **Task Completion Celebrations**: Contextual encouragement per task type
-- **Time-Aware Greetings**: Morning, afternoon, evening, and night messages
+| Intensity | Breaks | Phone/Social | Leisure | Sleep |
+|-----------|--------|--------------|---------|-------|
+| **Low** | Full (20min) | Full (60min) | Full (120min) | 8h |
+| **Medium** | Normal (15min) | Limited (30min) | Normal (60min) | 7.5h |
+| **High** | Short (10min) | Minimal (15min) | Minimal (30min) | 7h (min 6.5h) |
+
+### Priority System
+
+Activities are protected in this order:
+
+1. **Work** - Deep focus tasks (NEVER reduced)
+2. **Essential** - Must-do personal tasks, meals
+3. **Breaks** - Can be shortened when needed
+4. **Phone/Social** - Can be heavily reduced
+5. **Leisure** - First to shrink
+6. **Sleep** - Protected minimum of 6.5 hours
+
+### Smart Tradeoff Communication
+
+Pace explains every scheduling decision:
+
+> "🔥 High intensity day activated. Work blocks are fully protected."
+> "⏱️ Breaks shortened to maximize productive time."
+> "📱 Phone/social time reduced to protect work focus."
 
 ## 🛠️ Tech Stack
 
@@ -48,23 +47,15 @@ An intelligent day planning system that helps you orchestrate overwhelming days 
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
 - **Animations**: Framer Motion
-- **State Management**: Zustand with localStorage persistence
-- **UI Components**: Radix UI primitives
-- **Icons**: Lucide React
-- **Date Handling**: date-fns
+- **State**: Zustand with localStorage persistence
+- **UI**: Radix UI primitives
+- **No AI APIs** - Pure rule-based scheduling engine
 
 ## 🚀 Getting Started
 
-### Prerequisites
-
-- Node.js 18+
-- npm or yarn
-
-### Installation
-
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/yourusername/pace.git
 cd pace
 
 # Install dependencies
@@ -74,145 +65,128 @@ npm install
 npm run dev
 ```
 
-The app will be available at `http://localhost:3000`
+Open [http://localhost:3000](http://localhost:3000) to start planning.
 
-### Build for Production
+## 📖 How It Works
 
-```bash
-npm run build
-npm start
+### 1. Add Tasks One by One
+
+No need to assign times. Just add what you need to do:
+
+- **Work tasks** - Deep focus blocks (90-120 min each)
+- **Essential tasks** - Things that must happen
+- **Movement** - Exercise, walks
+- **Phone/Social** - Flexible, can be reduced
+- **Leisure** - Free time, hobbies
+
+### 2. Set Your Intensity
+
+- **Low**: Recovery day, full breaks and leisure
+- **Medium**: Balanced productivity
+- **High**: Maximum output, minimal distractions
+
+### 3. Generate Schedule
+
+Pace creates a structured timeline:
+
+```typescript
+[
+  { start: "7:00 AM", end: "7:30 AM", label: "Morning Routine", type: "essential" },
+  { start: "7:30 AM", end: "9:30 AM", label: "Deep Work Block", type: "work" },
+  { start: "9:30 AM", end: "9:40 AM", label: "Break", type: "break" },
+  // ... continues through day
+]
 ```
+
+### 4. Execute & Track
+
+Check off blocks as you complete them. The schedule adapts to show your progress.
 
 ## 📁 Project Structure
 
 ```
 src/
 ├── app/
-│   ├── globals.css        # Global styles & Tailwind config
-│   ├── layout.tsx         # Root layout with fonts
-│   └── page.tsx           # Main application page
+│   ├── globals.css        # Global styles
+│   ├── layout.tsx         # Root layout
+│   └── page.tsx           # Main app
 ├── components/
-│   ├── calendar/          # Calendar view components
-│   ├── encouragement/     # Encouragement system
 │   ├── layout/            # Header, background, command palette
-│   ├── planner/           # Planning flow, task input/list
-│   ├── providers/         # Theme provider
-│   ├── settings/          # Settings dialog
-│   ├── timeline/          # Timeline view
-│   └── ui/                # Reusable UI components
+│   ├── task-input/        # Task entry interface
+│   ├── schedule/          # Timeline display
+│   ├── calendar/          # Calendar view
+│   └── ui/                # Reusable components
 ├── lib/
-│   └── utils.ts           # Utility functions
+│   ├── utils.ts           # Utilities
+│   └── scheduler.ts       # 🔥 Core scheduling engine
 ├── store/
-│   └── useStore.ts        # Zustand store with persistence
+│   └── useStore.ts        # Zustand state management
 └── types/
-    └── index.ts           # TypeScript type definitions
+    └── index.ts           # TypeScript definitions
 ```
 
-## 🎯 Key Concepts
+## 🧠 Scheduling Engine
 
-### Planning Flow
+The heart of Pace is the rule-based scheduler (`src/lib/scheduler.ts`):
 
-The planning flow guides users through creating an optimized day plan:
-
-1. **Date Selection**: Today, tomorrow, or pick a specific day
-2. **Time Window**: How many hours are available
-3. **Energy Level**: Current energy state affects task ordering
-4. **Mood State**: Influences suggestions and pacing
-5. **Activity Types**: Which categories to include
-6. **Intensity**: How hard to push throughout the day
-
-### Task Scheduling Algorithm
-
-Tasks are scheduled based on:
-- Category preferences (work in morning, social in evening)
-- Energy levels (demanding tasks when energy is high)
-- Break frequency settings (automatic rest periods)
-- Duration estimates (fitting tasks into available time)
-
-### Persistence
-
-All data is stored in localStorage:
-- Day plans with tasks and time blocks
-- User preferences (wake/sleep time, break frequency)
-- App settings (theme, notifications, animations)
-
-## 🎨 Design System
-
-### Colors
-
-- **Pace Blue**: Primary brand color
-- **Work**: Indigo tones
-- **Rest**: Purple tones
-- **Social**: Orange tones
-- **Movement**: Emerald tones
-
-### Glassmorphism
-
-Cards use backdrop blur with subtle transparency:
-```css
-.glass {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+```typescript
+// Core scheduling function
+function generateSchedule(
+  tasks: Task[],
+  config: ScheduleConfig
+): ScheduleResult {
+  // 1. Calculate required work time (PROTECTED)
+  // 2. Calculate breaks needed between work blocks
+  // 3. If time is tight, reduce in priority order:
+  //    - Breaks (up to 50%)
+  //    - Sleep (max 1 hour, never below 6.5h)
+  // 4. Allocate remaining time to flexible activities
+  // 5. Generate tradeoff messages
 }
 ```
 
-### Animations
+### Key Rules
 
-Powered by Framer Motion:
-- Page transitions
-- Staggered list animations
-- Interactive hover states
-- Progress indicators
+- Work blocks are 90-120 minutes
+- Breaks are automatically inserted between work blocks
+- Lunch is scheduled around noon
+- Evening wind-down before sleep
+- All times are system-assigned (user never sets times)
 
 ## ⌨️ Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
 | `⌘K` | Open command palette |
-| `⌘N` | New plan for today |
-| `⌘T` | Add quick task |
+| `⌘N` | Plan today |
 | `⌘D` | Toggle dark/light mode |
-| `⌘,` | Open settings |
-| `ESC` | Close dialogs/cancel |
 
-## 🔧 Configuration
+## 🎨 UI Features
 
-### User Preferences
-
-Accessible via Settings:
-- Wake/Sleep times
-- Break frequency (minutes between breaks)
-- Break duration
-- Balance preference (work/rest/social/movement ratios)
-
-### App Settings
-
-- Theme (light/dark/system)
-- Notifications
-- Sound effects
-- Animation toggle
+- **Glassmorphism** - Frosted glass card effects
+- **Ambient Background** - Dynamic gradients based on time of day
+- **Framer Motion** - Smooth animations throughout
+- **Dark Mode** - Easy on the eyes
 
 ## 📱 Responsive Design
 
-- **Desktop**: Full three-column layout
-- **Tablet**: Two-column adaptive layout
-- **Mobile**: Single-column stack with slide-out menus
+Works on desktop, tablet, and mobile devices.
 
-## 🧪 Future Enhancements
+## 🔮 Future Enhancements
 
-- [ ] Real-time sync across devices
+- [ ] Drag-and-drop block reordering
+- [ ] Weekly overview
+- [ ] Recurring tasks
+- [ ] Calendar sync (Google, Apple)
 - [ ] Push notifications
-- [ ] Calendar integration (Google, Apple)
-- [ ] AI-powered task suggestions
-- [ ] Weekly/monthly analytics
-- [ ] Collaborative planning
-- [ ] Widget support
+- [ ] Analytics dashboard
 
 ## 📄 License
 
-MIT License - see LICENSE file for details
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-Built with ❤️ using Next.js 14, TypeScript, and Tailwind CSS
+Built with ❤️ to help you focus on what matters.
+
+**Remember: Your work is always protected.**

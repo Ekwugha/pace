@@ -7,10 +7,11 @@ import {
   Command,
   Moon,
   Sun,
-  Settings,
   Sparkles,
   Menu,
   X,
+  Clock,
+  ListTodo,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -29,16 +30,16 @@ export function Header({ onOpenCommandPalette }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigation = useNavigation();
   const settings = useSettings();
-  const { setCurrentView, setTheme } = useStore();
+  const { setCurrentView, updateSettings } = useStore();
 
   const navItems = [
-    { id: "planner", label: "Plan", icon: Sparkles },
-    { id: "timeline", label: "Timeline", icon: Calendar },
+    { id: "input", label: "Tasks", icon: ListTodo },
+    { id: "schedule", label: "Schedule", icon: Clock },
     { id: "calendar", label: "Calendar", icon: Calendar },
   ] as const;
 
   const toggleTheme = () => {
-    setTheme(settings.theme === "dark" ? "light" : "dark");
+    updateSettings({ theme: settings.theme === "dark" ? "light" : "dark" });
   };
 
   return (
@@ -56,13 +57,13 @@ export function Header({ onOpenCommandPalette }: HeaderProps) {
             className="flex items-center gap-3"
           >
             <div className="relative">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pace-400 to-purple-500 flex items-center justify-center shadow-glow-sm">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400 to-purple-500 flex items-center justify-center shadow-glow-sm">
                 <Sparkles className="w-5 h-5 text-white" />
               </div>
               <motion.div
                 animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
                 transition={{ duration: 2, repeat: Infinity }}
-                className="absolute inset-0 rounded-xl bg-gradient-to-br from-pace-400 to-purple-500 blur-lg -z-10"
+                className="absolute inset-0 rounded-xl bg-gradient-to-br from-sky-400 to-purple-500 blur-lg -z-10"
               />
             </div>
             <div>
@@ -118,15 +119,6 @@ export function Header({ onOpenCommandPalette }: HeaderProps) {
               )}
             </Button>
 
-            {/* Settings */}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-white/60 hover:text-white hidden sm:flex"
-            >
-              <Settings className="w-4 h-4" />
-            </Button>
-
             {/* Mobile Menu Toggle */}
             <Button
               variant="ghost"
@@ -177,4 +169,3 @@ export function Header({ onOpenCommandPalette }: HeaderProps) {
     </header>
   );
 }
-
