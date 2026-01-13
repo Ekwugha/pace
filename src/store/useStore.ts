@@ -46,7 +46,15 @@ interface PaceState {
   setSleepTime: (date: string, time: string) => void;
   
   // Task Actions (one at a time input)
-  addTask: (date: string, title: string, type: BlockType, estimatedMinutes: number) => Task;
+  // For work tasks, minHours and maxHours can be provided for time range
+  addTask: (
+    date: string, 
+    title: string, 
+    type: BlockType, 
+    estimatedMinutes: number,
+    minHours?: number,
+    maxHours?: number
+  ) => Task;
   removeTask: (date: string, taskId: string) => void;
   updateTask: (date: string, taskId: string, updates: Partial<Task>) => void;
   
@@ -202,7 +210,7 @@ export const useStore = create<PaceState>()(
 
       // ========== TASK ACTIONS ==========
 
-      addTask: (date, title, type, estimatedMinutes) => {
+      addTask: (date, title, type, estimatedMinutes, minHours, maxHours) => {
         const task: Task = {
           id: generateId(),
           title,
@@ -210,6 +218,9 @@ export const useStore = create<PaceState>()(
           estimatedMinutes,
           isFlexible: type !== "work" && type !== "essential",
           addedAt: new Date(),
+          // Only add time range for work tasks
+          ...(type === "work" && minHours !== undefined && { minHours }),
+          ...(type === "work" && maxHours !== undefined && { maxHours }),
         };
 
         set((state) => {

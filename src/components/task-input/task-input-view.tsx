@@ -135,6 +135,10 @@ export function TaskInputView() {
   const [taskType, setTaskType] = useState<BlockType>("work");
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [mounted, setMounted] = useState(false);
+  // Work task time range (optional)
+  const [useTimeRange, setUseTimeRange] = useState(false);
+  const [minHours, setMinHours] = useState(1);
+  const [maxHours, setMaxHours] = useState(2);
 
   const currentPlan = useCurrentPlan();
   const selectedDate = useStore((state) => state.navigation.selectedDate);
@@ -160,14 +164,24 @@ export function TaskInputView() {
   const handleAddTask = useCallback(() => {
     if (!taskTitle.trim()) return;
     
-    // SYSTEM assigns duration - user never chooses
+    // SYSTEM assigns duration - user never chooses (except work can have range)
     const systemDuration = SYSTEM_DURATIONS[taskType];
     
-    addTask(selectedDate, taskTitle.trim(), taskType, systemDuration);
+    // For work tasks with time range, pass min/max hours
+    if (taskType === "work" && useTimeRange) {
+      addTask(selectedDate, taskTitle.trim(), taskType, systemDuration, minHours, maxHours);
+    } else {
+      addTask(selectedDate, taskTitle.trim(), taskType, systemDuration);
+    }
+    
+    // Reset form
     setTaskTitle("");
     setTaskType("work");
+    setUseTimeRange(false);
+    setMinHours(1);
+    setMaxHours(2);
     setIsAddingTask(false);
-  }, [taskTitle, taskType, selectedDate, addTask]);
+  }, [taskTitle, taskType, selectedDate, addTask, useTimeRange, minHours, maxHours]);
 
   const handleGenerateSchedule = useCallback(() => {
     generateSchedule(selectedDate);
@@ -351,7 +365,10 @@ export function TaskInputView() {
                       {task.type !== "work" && (
                         <span className="text-amber-400/70"> · May be adjusted</span>
                       )}
-                      {task.type === "work" && (
+                      {task.type === "work" && task.minHours && task.maxHours && (
+                        <span className="text-indigo-400/70"> · {task.minHours}-{task.maxHours}h range</span>
+                      )}
+                      {task.type === "work" && !task.minHours && (
                         <span className="text-indigo-400/70"> · Protected</span>
                       )}
                     </div>
@@ -472,6 +489,105 @@ export function TaskInputView() {
                   ))}
                 </div>
               </div>
+
+              {/* Time Range for Work Tasks (Optional) */}
+              {taskType === "work" && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-3 pt-2 border-t border-white/[0.1]"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-sm text-white/80 font-medium">
+                        Set time range?
+                      </label>
+                      <p className="text-xs text-white/40">
+                        Optional: Tell us how much time this work might need
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setUseTimeRange(!useTimeRange)}
+                      className={cn(
+                        "relative w-11 h-6 rounded-full transition-colors",
+                        useTimeRange ? "bg-indigo-500" : "bg-white/20"
+                      )}
+                    >
+                      <motion.div
+                        animate={{ x: useTimeRange ? 20 : 2 }}
+                        className="absolute top-1 w-4 h-4 rounded-full bg-white shadow"
+                      />
+                    </button>
+                  </div>
+
+                  {useTimeRange && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="space-y-3"
+                    >
+                      <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+                        <p className="text-sm text-white/70 mb-3">
+                          <span className="text-indigo-400 font-medium">How it works:</span> Set a range like &quot;2-4 hours&quot;. 
+                          On high intensity days, we&apos;ll use the max. On low intensity days, we&apos;ll use the min.
+                        </p>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-xs text-white/60 block mb-1">Minimum hours</label>
+                            <select
+                              value={minHours}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setMinHours(val);
+                                if (val >= maxHours) setMaxHours(val + 1);
+                              }}
+                              className="w-full px-3 py-2 bg-white/[0.05] border border-white/[0.1] rounded-lg text-white focus:outline-none focus:border-indigo-400"
+                            >
+                              {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6].map((h) => (
+                                <option key={h} value={h} className="bg-slate-900">
+                                  {h}h
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-white/60 block mb-1">Maximum hours</label>
+                            <select
+                              value={maxHours}
+                              onChange={(e) => setMaxHours(Number(e.target.value))}
+                              className="w-full px-3 py-2 bg-white/[0.05] border border-white/[0.1] rounded-lg text-white focus:outline-none focus:border-indigo-400"
+                            >
+                              {[1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8].filter(h => h > minHours).map((h) => (
+                                <option key={h} value={h} className="bg-slate-900">
+                                  {h}h
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-3 flex items-center gap-2 text-xs">
+                          <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                          <span className="text-white/60">
+                            Range: <span className="text-white font-medium">{minHours}h - {maxHours}h</span>
+                            {plan.intensity === "high" && (
+                              <span className="text-indigo-400 ml-1">(will use {maxHours}h)</span>
+                            )}
+                            {plan.intensity === "medium" && (
+                              <span className="text-amber-400 ml-1">(will use ~{((minHours + maxHours) / 2).toFixed(1)}h)</span>
+                            )}
+                            {plan.intensity === "low" && (
+                              <span className="text-emerald-400 ml-1">(will use {minHours}h)</span>
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </motion.div>
+              )}
 
               {/* Actions */}
               <div className="flex justify-end gap-2 pt-2">

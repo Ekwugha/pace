@@ -40,6 +40,11 @@ export interface Task {
   type: BlockType;
   estimatedMinutes: number; // System-assigned, not user-assigned
   isFlexible: boolean;
+  // Work tasks can have optional time range (in hours)
+  // User says "I need 2-4 hours for this"
+  // System uses intensity to pick duration from range
+  minHours?: number;
+  maxHours?: number;
 }
 
 export interface TimeBlock {
@@ -117,9 +122,44 @@ const INTENSITY_CONFIG: Record<Intensity, IntensityConfig> = {
 };
 
 // Work block constraints
-const WORK_BLOCK_TARGET = 90; // Each work task = 90 min block
+const DEFAULT_WORK_BLOCK = 90; // Default if no range specified
 const MEAL_DURATION = 30;
 const MORNING_ROUTINE = 30;
+
+/**
+ * Calculate work duration based on intensity and optional time range
+ * 
+ * If user sets a range (e.g., 2-4 hours):
+ * - LOW intensity: use minHours (2h) - easier day
+ * - MEDIUM intensity: use midpoint (3h)  
+ * - HIGH intensity: use maxHours (4h) - push harder
+ */
+function calculateWorkDuration(
+  task: Task,
+  intensity: Intensity
+): number {
+  // If no range specified, use default
+  if (task.minHours === undefined || task.maxHours === undefined) {
+    return DEFAULT_WORK_BLOCK;
+  }
+  
+  const minMinutes = task.minHours * 60;
+  const maxMinutes = task.maxHours * 60;
+  
+  switch (intensity) {
+    case "low":
+      // Use minimum - easier day, less time on work
+      return minMinutes;
+    case "medium":
+      // Use midpoint - balanced
+      return Math.round((minMinutes + maxMinutes) / 2);
+    case "high":
+      // Use maximum - push harder, maximize work time
+      return maxMinutes;
+    default:
+      return DEFAULT_WORK_BLOCK;
+  }
+}
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -162,10 +202,17 @@ export function generateSchedule(
   const phoneTasks = tasks.filter(t => t.type === "phone" || t.type === "social");
   const leisureTasks = tasks.filter(t => t.type === "leisure");
   
-  // Calculate total work time needed
-  // Each work task gets a 90-min block (system decides)
+  // Calculate work durations based on intensity and time ranges
+  // Each work task gets duration based on:
+  // - If range set: pick from range based on intensity
+  // - If no range: default 90 min block
+  const workDurations = workTasks.map(task => ({
+    task,
+    duration: calculateWorkDuration(task, intensity),
+  }));
+  
+  const totalWorkMinutes = workDurations.reduce((sum, wd) => sum + wd.duration, 0);
   const workBlocksNeeded = workTasks.length;
-  const totalWorkMinutes = workBlocksNeeded * WORK_BLOCK_TARGET;
   
   // Essential tasks get their system-assigned time
   const totalEssentialMinutes = essentialTasks.reduce((sum, t) => sum + t.estimatedMinutes, 0);
@@ -241,9 +288,17 @@ export function generateSchedule(
     leisureReduced = true;
   }
   
+  // Check if any work tasks have time ranges
+  const rangedWorkTasks = workDurations.filter(wd => 
+    wd.task.minHours !== undefined && wd.task.maxHours !== undefined
+  );
+  
   // Generate tradeoff messages
   if (intensity === "high") {
     tradeoffs.push("🔥 High intensity mode. Work blocks are fully protected.");
+    if (rangedWorkTasks.length > 0) {
+      tradeoffs.push("⏰ Work time ranges set to maximum for maximum productivity.");
+    }
     if (breaksReduced) {
       tradeoffs.push("⏱️ Breaks shortened to maximize productive time.");
     }
@@ -264,11 +319,17 @@ export function generateSchedule(
     }
   } else if (intensity === "medium") {
     tradeoffs.push("⚡ Medium intensity. Balanced schedule with focused work time.");
+    if (rangedWorkTasks.length > 0) {
+      tradeoffs.push("⏰ Work time ranges set to midpoint for balance.");
+    }
     if (phoneReduced) {
       tradeoffs.push("📱 Phone time slightly limited.");
     }
   } else {
     tradeoffs.push("🌿 Low intensity day. Full recovery and balance prioritized.");
+    if (rangedWorkTasks.length > 0) {
+      tradeoffs.push("⏰ Work time ranges set to minimum — more time for you.");
+    }
   }
   
   // ========================================================================
@@ -292,7 +353,7 @@ export function generateSchedule(
   currentTime = addMinutes(currentTime, MORNING_ROUTINE);
   
   // Schedule work blocks with breaks
-  workTasks.forEach((task, index) => {
+  workDurations.forEach(({ task, duration }, index) => {
     // Check if it's lunch time (around noon-1pm)
     const currentHour = currentTime.getHours();
     if (currentHour >= 12 && currentHour < 14 && !blocks.some(b => b.label === "Lunch")) {
@@ -307,30 +368,39 @@ export function generateSchedule(
       currentTime = addMinutes(currentTime, MEAL_DURATION);
     }
     
-    // Work block (90 minutes)
+    // Work block with calculated duration
+    const durationHours = duration / 60;
+    const hasRange = task.minHours !== undefined && task.maxHours !== undefined;
+    const blockLabel = hasRange 
+      ? `${task.title} (${durationHours.toFixed(1)}h)`
+      : task.title;
+    
     blocks.push({
       id: generateId(),
       start: currentTime,
-      end: addMinutes(currentTime, WORK_BLOCK_TARGET),
-      label: task.title,
+      end: addMinutes(currentTime, duration),
+      label: blockLabel,
       type: "work",
       taskId: task.id,
       isReduced: false,
     });
-    currentTime = addMinutes(currentTime, WORK_BLOCK_TARGET);
+    currentTime = addMinutes(currentTime, duration);
     
     // Break after work block (except last one)
-    if (index < workTasks.length - 1) {
+    // Longer breaks for longer work blocks
+    const adjustedBreak = duration > 120 ? breakDuration + 5 : breakDuration;
+    
+    if (index < workDurations.length - 1) {
       blocks.push({
         id: generateId(),
         start: currentTime,
-        end: addMinutes(currentTime, breakDuration),
+        end: addMinutes(currentTime, adjustedBreak),
         label: "Break",
         type: "break",
         isReduced: breaksReduced,
         originalMinutes: breaksReduced ? intensityConfig.breakDuration : undefined,
       });
-      currentTime = addMinutes(currentTime, breakDuration);
+      currentTime = addMinutes(currentTime, adjustedBreak);
     }
   });
   

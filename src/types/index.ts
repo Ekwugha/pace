@@ -29,6 +29,11 @@ export interface Task {
   isFlexible: boolean; // Can be reduced when time is tight
   addedAt: Date;
   isCompleted?: boolean; // For tracking completion in calendar view
+  // Work-only: optional time range (in hours)
+  // User can set "I need 2-4 hours for this work"
+  // System uses intensity to pick from this range
+  minHours?: number; // Minimum hours needed
+  maxHours?: number; // Maximum hours desired
 }
 
 // Scheduled time block (after scheduling)
